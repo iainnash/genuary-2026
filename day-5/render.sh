@@ -1,0 +1,1 @@
+gs -dBATCH -dNOPAUSE -sDEVICE=png16m -sOutputFile=output.png logo.ps

@@ -1,0 +1,13 @@
+[package]
+name = "day-4"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+nannou = "0.19"
+anyhow = "1"
+bytemuck = { version = "1.14", features = ["derive"] }
+wgpu-types = "0.17"
+
+gstreamer = "0.22"
+gstreamer-app = "0.22"
