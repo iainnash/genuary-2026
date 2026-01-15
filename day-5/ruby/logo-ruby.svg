@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg width="612" height="792" xmlns="http://www.w3.org/2000/svg">
+<rect width="100%" height="100%" fill="white" />
+
+<!-- Letter: g -->
+<g id="letter-g">
+<circle cx="120.0" cy="372.0" r="20.0" stroke="rgb(51,51,51)" stroke-width="4" fill="none" />
+<path d="M 109.99999999999999,405.3205080756888 A 20.0,20.0 0 0,0 137.3205080756888,378.0" stroke="rgb(51,51,51)" stroke-width="4" fill="none" />
+</g>
+
+<!-- Letter: e -->
+<g id="letter-e">
+<path d="M 200.0,372.0 A 20.0,20.0 0 1,0 180.0,392.0" stroke="rgb(51,51,51)" stroke-width="4" fill="none" />
+<line x1="180.0" y1="372.0" x2="200.0" y2="372.0" stroke="rgb(51,51,51)" stroke-width="4" fill="none" />
+</g>
+
+<!-- Letter: n -->
+<g id="letter-n">
+<line x1="220.0" y1="392.0" x2="220.0" y2="352.0" stroke="rgb(51,51,51)" stroke-width="4" fill="none" />
+<path d="M 260.0,372.0 A 20.0,20.0 0 0,0 220.0,372.0" stroke="rgb(51,51,51)" stroke-width="4" fill="none" />
+<line x1="260.0" y1="392.0" x2="260.0" y2="372.0" stroke="rgb(51,51,51)" stroke-width="4" fill="none" />
+</g>
+
+<!-- Letter: u -->
+<g id="letter-u">
+<line x1="280.0" y1="352.0" x2="280.0" y2="372.0" stroke="rgb(51,51,51)" stroke-width="4" fill="none" />
+<path d="M 280.0,372.0 A 20.0,20.0 0 0,0 320.0,372.0" stroke="rgb(51,51,51)" stroke-width="4" fill="none" />
+<line x1="320.0" y1="352.0" x2="320.0" y2="372.0" stroke="rgb(51,51,51)" stroke-width="4" fill="none" />
+</g>
+
+<!-- Letter: r -->
+<g id="letter-r">
+<line x1="340.0" y1="392.0" x2="340.0" y2="352.0" stroke="rgb(51,51,51)" stroke-width="4" fill="none" />
+<path d="M 360.0,372.0 A 20.0,20.0 0 0,0 340.0,352.0" stroke="rgb(51,51,51)" stroke-width="4" fill="none" />
+</g>
+
+<!-- Letter: a -->
+<g id="letter-a">
+<circle cx="402.0" cy="372.0" r="20.0" stroke="rgb(51,51,51)" stroke-width="4" fill="none" />
+<line x1="422.0" y1="392.0" x2="422.0" y2="352.0" stroke="rgb(51,51,51)" stroke-width="4" fill="none" />
+</g>
+
+<!-- Letter: r -->
+<g id="letter-r">
+<line x1="442.0" y1="392.0" x2="442.0" y2="352.0" stroke="rgb(51,51,51)" stroke-width="4" fill="none" />
+<path d="M 462.0,372.0 A 20.0,20.0 0 0,0 442.0,352.0" stroke="rgb(51,51,51)" stroke-width="4" fill="none" />
+</g>
+
+<!-- Letter: y -->
+<g id="letter-y">
+<line x1="484.0" y1="352.0" x2="504.0" y2="372.0" stroke="rgb(51,51,51)" stroke-width="4" fill="none" />
+<line x1="504.0" y1="372.0" x2="524.0" y2="352.0" stroke="rgb(51,51,51)" stroke-width="4" fill="none" />
+<line x1="504.0" y1="372.0" x2="504.0" y2="392.0" stroke="rgb(51,51,51)" stroke-width="4" fill="none" />
+</g>
+</svg>
