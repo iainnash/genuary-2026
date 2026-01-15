@@ -462,6 +462,7 @@ dependencies = [
  "gstreamer",
  "gstreamer-app",
  "nannou",
+ "rand 0.8.5",
  "wgpu-types",
 ]
 

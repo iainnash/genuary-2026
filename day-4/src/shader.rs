@@ -18,22 +18,14 @@ fn vs_main(vert: VertexInput) -> VertexOutput {
     return out;
 }
 
-// Fragment shader
+// Fragment shader - simple passthrough
 @group(0) @binding(0) var current_texture: texture_2d<f32>;
-@group(0) @binding(1) var averaged_texture: texture_2d<f32>;
-@group(0) @binding(2) var s: sampler;
+@group(0) @binding(1) var s: sampler;
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let current = textureSample(current_texture, s, in.tex_coords);
-    let averaged = textureSample(averaged_texture, s, in.tex_coords);
-
-    // Compute absolute difference
-    let diff = abs(current - averaged);
-
-    // Amplify the difference for better visibility (multiply by 3.0)
-    let amplified = diff * 3.0;
-
-    return vec4<f32>(amplified.rgb, 1.0);
+    // Simple passthrough - just sample and return the current texture
+    let color = textureSample(current_texture, s, in.tex_coords);
+    return vec4<f32>(color.rgb, 1.0);
 }
 "#;

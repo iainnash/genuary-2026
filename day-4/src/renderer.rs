@@ -1,12 +1,11 @@
 use nannou::prelude::*;
 use nannou::wgpu;
 use wgpu_types::SamplerBindingType;
-use std::cell::Cell;
 
 use crate::shader::DIFFERENCE_SHADER;
 use crate::video_capture::{SharedFrame, HEIGHT, WIDTH};
 
-const FRAME_BUFFER_SIZE: usize = 6;
+// No longer need frame buffer size as GStreamer handles averaging
 const FRAME_SIZE: usize = (WIDTH * HEIGHT * 4) as usize;
 
 #[repr(C)]
@@ -29,34 +28,40 @@ impl Vertex {
     }
 }
 
+use std::time::{Instant, Duration};
+use std::cell::{Cell, RefCell};
+use rand::{Rng, SeedableRng};
+use rand::rngs::StdRng;
+
 pub struct VideoRenderer {
     pub shared_frame: SharedFrame,
     _gst_pipeline: gstreamer::Pipeline,
-    current_texture: wgpu::Texture,
-    averaged_texture: wgpu::Texture,
+    mosaic_texture: wgpu::Texture,  // The persistent texture that accumulates partial updates
     bind_group: wgpu::BindGroup,
     pipeline: wgpu::RenderPipeline,
-    frame_buffer: Box<[[u8; FRAME_SIZE]; FRAME_BUFFER_SIZE]>,
-    frame_count: Cell<usize>,
-    write_index: Cell<usize>,
+    
+    // CPU-side mosaic buffer with interior mutability
+    mosaic_buffer: RefCell<Vec<u8>>,
+    frame_counter: Cell<usize>,
+    last_update: Cell<Instant>,
+    rng: RefCell<StdRng>,
+    
+    // Mosaic parameters
+    square_size: usize,
+    squares_per_update: usize,
+    update_interval: Duration,
 }
 
 impl VideoRenderer {
     pub fn new(window: &Window, shared_frame: SharedFrame, gst_pipeline: gstreamer::Pipeline) -> Self {
         let device = window.device();
 
-        // Create current frame texture
-        let current_texture = wgpu::TextureBuilder::new()
+        // Create mosaic texture (this is what we'll display with partial updates)
+        let mosaic_texture = wgpu::TextureBuilder::new()
             .size([WIDTH, HEIGHT])
             .format(wgpu::TextureFormat::Rgba8Unorm)
             .usage(wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING)
-            .build(device);
-
-        // Create averaged frame texture
-        let averaged_texture = wgpu::TextureBuilder::new()
-            .size([WIDTH, HEIGHT])
-            .format(wgpu::TextureFormat::Rgba8Unorm)
-            .usage(wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING)
+            .sample_count(1)
             .build(device);
 
         // Create sampler
@@ -75,7 +80,7 @@ impl VideoRenderer {
             anisotropy_clamp: 1,
         });
 
-        // Create bind group layout
+        // Create bind group layout (simplified to only current texture and sampler)
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Video Bind Group Layout"),
             entries: &[
@@ -92,25 +97,14 @@ impl VideoRenderer {
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
                     visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Sampler(SamplerBindingType::Filtering),
                     count: None,
                 },
             ],
         });
 
-        // Create bind group
-        let current_view = current_texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let averaged_view = averaged_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        // Create bind group (use mosaic texture for display)
+        let mosaic_view = mosaic_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Video Bind Group"),
@@ -118,14 +112,10 @@ impl VideoRenderer {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&current_view),
+                    resource: wgpu::BindingResource::TextureView(&mosaic_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&averaged_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
                     resource: wgpu::BindingResource::Sampler(&sampler),
                 },
             ],
@@ -157,7 +147,7 @@ impl VideoRenderer {
                 module: &shader,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: Frame::TEXTURE_FORMAT,
+                    format: wgpu::TextureFormat::Rgba16Float,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -180,103 +170,101 @@ impl VideoRenderer {
             multiview: None,
         });
 
-        // Allocate frame buffer on heap to avoid stack overflow
-        let frame_buffer = Box::new([[0u8; FRAME_SIZE]; FRAME_BUFFER_SIZE]);
+        // Initialize mosaic buffer
+        let mosaic_buffer = RefCell::new(vec![0u8; FRAME_SIZE]);
+        
+        // Initialize random number generator with a fixed seed for reproducibility
+        let seed = 42;
+        let rng = RefCell::new(StdRng::seed_from_u64(seed));
 
         Self {
             shared_frame,
             _gst_pipeline: gst_pipeline,
-            current_texture,
-            averaged_texture,
+            mosaic_texture,
             bind_group,
             pipeline,
-            frame_buffer,
-            frame_count: Cell::new(0),
-            write_index: Cell::new(0),
+            mosaic_buffer,
+            frame_counter: Cell::new(0),
+            last_update: Cell::new(Instant::now()),
+            rng,
+            square_size: 32,
+            squares_per_update: 20,
+            update_interval: Duration::from_millis(200),
         }
     }
 
-    pub fn update(&self, _app: &App) {}
-
-    fn compute_average(&self) -> [u8; FRAME_SIZE] {
-        let count = self.frame_count.get();
-        if count == 0 {
-            return [0u8; FRAME_SIZE];
+    pub fn update(&self, _app: &App) {
+        // Check if it's time to update the mosaic
+        let now = Instant::now();
+        let last_update = self.last_update.get();
+        if now.duration_since(last_update) < self.update_interval {
+            return;
         }
+        self.last_update.set(now);
+        
+        // Increment frame counter
+        let current_count = self.frame_counter.get();
+        self.frame_counter.set(current_count + 1);
+    }
 
-        let mut averaged = [0u32; FRAME_SIZE];
-
-        // Sum all valid frames
-        for frame_idx in 0..count {
-            let frame = &self.frame_buffer[frame_idx];
-            for i in 0..FRAME_SIZE {
-                averaged[i] += frame[i] as u32;
+    // Function to update random squares in the mosaic buffer
+    fn update_random_squares(&self, source: &[u8]) {
+        let width = WIDTH as usize;
+        let height = HEIGHT as usize;
+        let square_size = self.rng.borrow_mut().gen_range(6..=128);
+        
+        // Get mutable references to the mosaic buffer and RNG
+        let mut mosaic_buffer = self.mosaic_buffer.borrow_mut();
+        let mut rng = self.rng.borrow_mut();
+        
+        // Update random squares
+        for _ in 0..self.squares_per_update {
+            // Generate random position for the square
+            let x = (rng.gen::<usize>() % (width - square_size)) & !0x1F; // Align to 32-pixel boundary
+            let y = (rng.gen::<usize>() % (height - square_size)) & !0x1F; // Align to 32-pixel boundary
+            
+            // Copy the square from source to target
+            for dy in 0..square_size {
+                for dx in 0..square_size {
+                    let pixel_idx = ((y + dy) * width + (x + dx)) * 4;
+                    if pixel_idx + 3 < source.len() && pixel_idx + 3 < mosaic_buffer.len() {
+                        mosaic_buffer[pixel_idx] = source[pixel_idx];         // R
+                        mosaic_buffer[pixel_idx + 1] = source[pixel_idx + 1]; // G
+                        mosaic_buffer[pixel_idx + 2] = source[pixel_idx + 2]; // B
+                        mosaic_buffer[pixel_idx + 3] = source[pixel_idx + 3]; // A
+                    }
+                }
             }
         }
-
-        // Divide by number of frames
-        let mut result = [0u8; FRAME_SIZE];
-        for i in 0..FRAME_SIZE {
-            result[i] = (averaged[i] / count as u32) as u8;
-        }
-        result
     }
 
     pub fn render(&self, app: &App, frame: Frame) {
         let window = app.main_window();
         let queue = window.queue();
         let device = window.device();
+        
+        // Track if we have a new frame to process
+        let mut new_frame_processed = false;
 
-        // Upload new frame if available
-        if let Some(rgba) = self.shared_frame.take() {
-            if rgba.len() == FRAME_SIZE {
-                // Write frame to circular buffer
-                let write_idx = self.write_index.get();
-                let frame_buffer = unsafe {
-                    // Safe because we're using Cell for synchronization and only accessing one frame at a time
-                    let ptr = &*self.frame_buffer as *const [[u8; FRAME_SIZE]; FRAME_BUFFER_SIZE] as *mut [[u8; FRAME_SIZE]; FRAME_BUFFER_SIZE];
-                    &mut *ptr
-                };
-                frame_buffer[write_idx].copy_from_slice(&rgba);
-
-                // Update circular buffer indices
-                self.write_index.set((write_idx + 1) % FRAME_BUFFER_SIZE);
-                let count = self.frame_count.get();
-                if count < FRAME_BUFFER_SIZE {
-                    self.frame_count.set(count + 1);
-                }
-
-                // Upload current frame
+        // Process current frame if available
+        if let Some(current_rgba) = self.shared_frame.take_current() {
+            if current_rgba.len() == FRAME_SIZE {
+                new_frame_processed = true;
+                
+                // Copy random squares from current frame to mosaic buffer
+                self.update_random_squares(&current_rgba);
+                
+                // Upload only the updated mosaic buffer to the GPU
+                // Note: This still uploads the whole buffer, but only the squares
+                // that were updated have changed
                 queue.write_texture(
                     wgpu::ImageCopyTexture {
-                        texture: &self.current_texture,
+                        texture: &self.mosaic_texture,
                         mip_level: 0,
                         origin: wgpu::Origin3d::ZERO,
                         aspect: wgpu::TextureAspect::All,
                     },
-                    &rgba,
-                    wgpu::ImageDataLayout {
-                        offset: 0,
-                        bytes_per_row: Some(WIDTH * 4),
-                        rows_per_image: Some(HEIGHT),
-                    },
-                    wgpu::Extent3d {
-                        width: WIDTH,
-                        height: HEIGHT,
-                        depth_or_array_layers: 1,
-                    },
-                );
-
-                // Compute and upload averaged frame
-                let averaged = self.compute_average();
-                queue.write_texture(
-                    wgpu::ImageCopyTexture {
-                        texture: &self.averaged_texture,
-                        mip_level: 0,
-                        origin: wgpu::Origin3d::ZERO,
-                        aspect: wgpu::TextureAspect::All,
-                    },
-                    &averaged,
+                    &self.mosaic_buffer.borrow(),
                     wgpu::ImageDataLayout {
                         offset: 0,
                         bytes_per_row: Some(WIDTH * 4),
@@ -289,6 +277,11 @@ impl VideoRenderer {
                     },
                 );
             }
+        }
+
+        // Skip vertex calculation and rendering if no new frame was processed
+        if !new_frame_processed {
+            return;
         }
 
         // Calculate aspect ratio corrected vertices

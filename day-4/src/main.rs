@@ -7,8 +7,12 @@ use nannou::prelude::*;
 use renderer::VideoRenderer;
 use video_capture::SharedFrame;
 
+use std::time::{Duration, Instant};
+
 struct Model {
     renderer: VideoRenderer,
+    last_update: Instant,
+    frame_duration: Duration, // Target duration between frames
 }
 
 fn main() {
@@ -18,8 +22,8 @@ fn main() {
 fn model(app: &App) -> Model {
     // Create window
     app.new_window()
-        .title("GStreamer Video - HD")
-        .size(1280, 720)
+        .title("Video Partial Updates - Random Squares")
+        .size(1280, 1024)
         .view(view)
         .build()
         .unwrap();
@@ -36,11 +40,24 @@ fn model(app: &App) -> Model {
     // Create renderer
     let renderer = VideoRenderer::new(&window, shared_frame, gst_pipeline);
 
-    Model { renderer }
+    // Set up frame rate limiter (target 30 FPS)
+    Model { 
+        renderer,
+        last_update: Instant::now(),
+        frame_duration: Duration::from_secs_f64(1.0 / 30.0), // 30 FPS
+    }
 }
 
 fn update(app: &App, model: &mut Model, _update: Update) {
-    model.renderer.update(app);
+    // Frame rate limiting
+    let now = Instant::now();
+    let elapsed = now.duration_since(model.last_update);
+    
+    // Only update if enough time has passed
+    if elapsed >= model.frame_duration {
+        model.renderer.update(app);
+        model.last_update = now;
+    }
 }
 
 fn view(app: &App, model: &Model, frame: Frame) {
